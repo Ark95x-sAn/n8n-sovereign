@@ -8,20 +8,21 @@ import { VERI3FY } from './VERI3FY';
 import { ScalingEngine } from './ScalingEngine';
 import { AutoGenerator } from './AutoGenerator';
 import { LearningCore } from './LearningCore';
+import { paxRuntime } from '../PAXRuntime'; // <-- Upgrade: PAX Integration
 
 // ============================================================
 // TYPES
 // ============================================================
 
 export interface LoopConfig {
-  maxIterations: number;       // 0 = infinite
-  intervalMs: number;          // ms between loop ticks
+  maxIterations: number;      // 0 = infinite
+  intervalMs: number;         // ms between loop ticks
   confidenceThreshold: number; // PAX gate (0.85)
-  autoScale: boolean;          // scale on passing loops
-  autoGenerate: boolean;       // emit new artifacts per loop
-  learnFromFailures: boolean;  // feed failures into LearningCore
+  autoScale: boolean;         // scale on passing loops
+  autoGenerate: boolean;      // emit new artifacts per loop
+  learnFromFailures: boolean; // feed failures into LearningCore
   debugMode: boolean;
-  veri3fyStages: number;       // 1, 2, or 3 stages
+  veri3fyStages: number;      // 1, 2, or 3 stages
 }
 
 export interface LoopIteration {
@@ -102,13 +103,13 @@ export class SLVSSRunner extends EventEmitter {
   private history: LoopIteration[] = [];
   private running: boolean = false;
   private startTime: number = Date.now();
-  private loopTimer: ReturnType<typeof setTimeout> | null = null;
+  private loopTimer: ReturnType<typeof setTimeout> | null = null; // <-- Fix Bug 2
 
   constructor(config: Partial<LoopConfig> = {}) {
     super();
     this.config = {
-      maxIterations: 0,          // infinite by default
-      intervalMs: 5000,          // 5s between ticks
+      maxIterations: 0, // infinite by default
+      intervalMs: 5000, // 5s between ticks
       confidenceThreshold: 0.85,
       autoScale: true,
       autoGenerate: true,
@@ -117,8 +118,16 @@ export class SLVSSRunner extends EventEmitter {
       veri3fyStages: 3,
       ...config,
     };
-    this.veri3fy = new VERI3FY({ stages: this.config.veri3fyStages, threshold: this.config.confidenceThreshold });
-    this.scaling = new ScalingEngine();
+
+    this.veri3fy = new VERI3FY({
+      stages: this.config.veri3fyStages,
+      threshold: this.config.confidenceThreshold
+    });
+
+    this.scaling = new ScalingEngine({
+      minPassStreak: 2 // <-- Warning 1: Faster compound scaling
+    });
+
     this.generator = new AutoGenerator();
     this.learner = new LearningCore();
   }
@@ -135,6 +144,10 @@ export class SLVSSRunner extends EventEmitter {
     this.running = true;
     this.startTime = Date.now();
     this.log('[SLVSS] Loop STARTED — ARK95X Sovereign Mode Active');
+    
+    // Upgrade: NeuroSync on start
+    paxRuntime.pulse({ emitNeuro: true, mission: 'SLVSS-STARTUP' });
+
     this.emit('slvss:started', this.getState());
     this.tick();
   }
@@ -152,6 +165,7 @@ export class SLVSSRunner extends EventEmitter {
 
   private async tick(): Promise<void> {
     if (!this.running) return;
+
     if (this.config.maxIterations > 0 && this.iteration >= this.config.maxIterations) {
       this.log(`[SLVSS] Reached max iterations (${this.config.maxIterations}). Stopping.`);
       this.stop();
@@ -160,6 +174,7 @@ export class SLVSSRunner extends EventEmitter {
 
     this.iteration++;
     const iterStart = Date.now();
+
     const iterObj: LoopIteration = {
       id: this.iteration,
       startedAt: new Date().toISOString(),
@@ -174,13 +189,22 @@ export class SLVSSRunner extends EventEmitter {
       roi: 0,
     };
 
-    this.log(`\n[SLVSS] ===== ITERATION #${this.iteration} =====`);
+    this.log(`
+[SLVSS] ===== ITERATION #${this.iteration} =====`);
     this.emit('slvss:iteration:start', { id: this.iteration });
 
     try {
       // ---- STAGE 1: VERI3FY ----
       this.log('[SLVSS] Phase 1: VERI3FY ...');
-      const payload = this.buildPayload();
+      
+      // Fix Bug 1: Freshest possible timestamp
+      const payload = { 
+        ...this.buildPayload(), 
+        timestamp: Date.now(),
+        // Upgrade: Prediction feedback
+        predictedScore: this.learner.predict(this.learner.extractFeatures(this.buildPayload()))
+      };
+
       const vResult = await this.veri3fy.verify(payload);
       iterObj.veri3fyResult = vResult;
       iterObj.confidence = vResult.score;
@@ -197,8 +221,8 @@ export class SLVSSRunner extends EventEmitter {
           iterObj.learningResult = lResult;
           this.log(`[SLVSS] LearningCore ingested failure → v${lResult.modelVersion}`);
         }
-
         this.emit('slvss:iteration:failed', iterObj);
+
       } else {
         this.totalPassed++;
         this.log(`[SLVSS] VERI3FY PASSED — score: ${vResult.score.toFixed(4)}`);
@@ -206,7 +230,11 @@ export class SLVSSRunner extends EventEmitter {
         // ---- STAGE 2: SCALE ----
         if (this.config.autoScale) {
           this.log('[SLVSS] Phase 2: SCALING ...');
-          const sResult = await this.scaling.scale({ score: vResult.score, iteration: this.iteration, history: this.history });
+          const sResult = await this.scaling.scale({
+            score: vResult.score,
+            iteration: this.iteration,
+            history: this.history
+          });
           iterObj.scalingResult = sResult;
           if (sResult.scaled) {
             iterObj.status = 'scaled';
@@ -231,13 +259,29 @@ export class SLVSSRunner extends EventEmitter {
         }
 
         // ---- STAGE 4: LEARN FROM SUCCESS ----
-        const lResult = await this.learner.ingest({ type: 'success', data: { vResult, scale: this.scaling.currentScale }, iteration: this.iteration });
+        const lResult = await this.learner.ingest({ 
+          type: 'success', 
+          data: { vResult, scale: this.scaling.currentScale }, 
+          iteration: this.iteration 
+        });
         iterObj.learningResult = lResult;
         this.log(`[SLVSS] LearningCore updated → v${lResult.modelVersion} | delta: +${lResult.improvementDelta.toFixed(4)}`);
 
         if (iterObj.status === 'running') iterObj.status = 'passed';
+
+        // Upgrade: PAX Pulse and Codex Sync
+        paxRuntime.pulse({ 
+          incr: true, 
+          codexSync: this.iteration % 25 === 0, // <-- Upgrade 11
+          note: `SLVSS-iter-${this.iteration}-score-${vResult.score.toFixed(3)}` 
+        });
+        
+        // Upgrade: Vault persistence
+        paxRuntime.vaultSet(`slvss:iter:${this.iteration}`, iterObj);
+
         this.emit('slvss:iteration:passed', iterObj);
       }
+
     } catch (err) {
       iterObj.status = 'failed';
       this.totalFailed++;
@@ -319,7 +363,7 @@ export class SLVSSRunner extends EventEmitter {
 // ============================================================
 
 export const slvss = new SLVSSRunner({
-  maxIterations: 0,         // INFINITE
+  maxIterations: 0, // INFINITE
   intervalMs: 5000,
   confidenceThreshold: 0.85,
   autoScale: true,
