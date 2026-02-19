@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ARK95X Sovereign Coordinator</title>
+  <style>
+    :root { --bg: #0a0a0f; --panel: #12121a; --text: #e0e0e0; --accent: #3a3af0; --dim: #888; }
+    body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+    #title-bar { height: 36px; -webkit-app-region: drag; display: flex; align-items: center; padding-left: 15px; font-size: 12px; color: var(--dim); letter-spacing: 1px; }
+    #main-content { flex: 1; display: grid; grid-template-columns: 280px 1fr; overflow: hidden; }
+    
+    /* Sidebar */
+    #sidebar { background: var(--panel); border-right: 1px solid #222; display: flex; flex-direction: column; padding: 20px; gap: 20px; }
+    .status-card { background: #1a1a24; padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); }
+    .status-label { font-size: 10px; color: var(--dim); text-transform: uppercase; margin-bottom: 5px; }
+    .status-value { font-size: 18px; font-weight: bold; }
+    .nav-item { padding: 10px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--dim); transition: 0.2s; }
+    .nav-item:hover { background: #ffffff0a; color: #fff; }
+    .nav-item.active { background: var(--accent); color: #fff; }
+
+    /* Dashboard */
+    #dashboard { padding: 30px; overflow-y: auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+    .agent-card { background: var(--panel); border-radius: 12px; padding: 20px; border: 1px solid #333; transition: 0.3s; cursor: pointer; position: relative; overflow: hidden; }
+    .agent-card:hover { transform: translateY(-5px); border-color: var(--accent); box-shadow: 0 10px 30px #00000050; }
+    .agent-name { font-size: 20px; font-weight: bold; margin-bottom: 5px; }
+    .agent-plan { font-size: 12px; color: var(--dim); }
+    .agent-token { margin-top: 15px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .token-bar { height: 4px; background: #333; flex: 1; border-radius: 2px; }
+    .token-fill { height: 100%; border-radius: 2px; }
+
+    /* Footer */
+    #footer { height: 30px; background: var(--panel); border-top: 1px solid #222; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; font-size: 10px; color: var(--dim); }
+  </style>
+</head>
+<body>
+  <div id="title-bar">ARK95X // SOVEREIGN COORDINATOR v1.0.0</div>
+  
+  <div id="main-content">
+    <div id="sidebar">
+      <div class="status-card">
+        <div class="status-label">Current Shift</div>
+        <div id="shift-name" class="status-value">BETA</div>
+        <div id="shift-label" style="font-size: 11px; color: var(--dim);">Active Execution</div>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <div class="nav-item active" onclick="showTab('dashboard')">Command Center</div>
+        <div class="nav-item" onclick="window.sovereign.openN8n()">n8n Workflows</div>
+        <div class="nav-item" onclick="window.sovereign.openAlpaca()">Alpaca Trading</div>
+        <div class="nav-item" onclick="window.sovereign.openGithub()">Sovereign Repo</div>
+        <div class="nav-item" onclick="window.sovereign.openSquare()">Square Payments</div>
+      </div>
+
+      <div style="margin-top: auto; font-size: 11px; color: #444;">
+        COMMANDER: BEN NORDSKOG<br>
+        LOC: LELAND, IOWA, US
+      </div>
+    </div>
+
+    <div id="dashboard">
+      <h1 style="margin-top: 0;">Agent Fleet</h1>
+      <div id="agent-grid" class="grid">
+        <!-- Agents populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <div id="footer">
+    <div id="hb-status">PAX HEARTBEAT: OPERATIONAL</div>
+    <div id="hb-time">TIMESTAMP: --:--:-- UTC</div>
+  </div>
+
+  <script>
+    function showTab(id) {
+      console.log('Tab change:', id);
+    }
+
+    // Initialize UI
+    window.sovereign.getAgents().then(agents => {
+      const grid = document.getElementById('agent-grid');
+      grid.innerHTML = '';
+      agents.forEach(agent => {
+        const card = document.createElement('div');
+        card.className = 'agent-card';
+        card.onclick = () => window.sovereign.openAgent(agent.url);
+        card.innerHTML = `
+          <div class="agent-name">${agent.name}</div>
+          <div class="agent-plan">${agent.plan} Plan</div>
+          <div class="agent-token">
+            <span>${agent.tokens} Units</span>
+            <div class="token-bar"><div class="token-fill" style="width: ${agent.tokens/15}%; background: ${agent.color}"></div></div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    });
+
+    window.sovereign.getShift().then(shift => {
+      document.getElementById('shift-name').innerText = shift.name;
+      document.getElementById('shift-label').innerText = shift.label;
+    });
+
+    window.sovereign.onHeartbeat(data => {
+      document.getElementById('hb-time').innerText = 'TIMESTAMP: ' + data.timestamp.split('T')[1].split('.')[0] + ' UTC';
+      document.getElementById('hb-status').style.color = '#00ff00';
+    });
+  </script>
+</body>
+</html>
