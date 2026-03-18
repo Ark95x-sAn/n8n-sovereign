@@ -91,6 +91,7 @@ function getNodeTypeByName(name: string): INodeTypeDescription | null {
 				:class="$style.button"
 				:loading="executing"
 				:iconOnly="executing"
+				:aria-label="i18n.baseText('nodeView.runButtonText.executeWorkflow')"
 				:disabled="disabled"
 				:size="size ?? 'large'"
 				icon="flask-conical"
@@ -165,6 +166,11 @@ function getNodeTypeByName(name: string): INodeTypeDescription | null {
 		padding-block: 0;
 		border-top-right-radius: 0;
 		border-bottom-right-radius: 0;
+	}
+
+	.split &[data-icon-only] {
+		padding-inline-start: 0;
+		width: var(--spacing--2xl);
 	}
 }
 
